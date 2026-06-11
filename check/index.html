@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Έλεγχος έκδοσης σχεδίου</title>
+<style>
+  :root {
+    --ink:      #1a1c1f;
+    --paper:    #eceae3;
+    --line:     #b7b3a7;
+    --current:  #1f6b3b;
+    --super:    #b23a2e;
+    --unknown:  #8a6d1f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    min-height: 100%;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.12;
+    pointer-events: none;
+  }
+  .block {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    background: #f6f4ee;
+    border: 2px solid var(--ink);
+    box-shadow: 0 2px 0 var(--ink), 0 18px 40px -28px rgba(0,0,0,.5);
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .head .logo {
+    display: block;
+    height: auto;
+    width: auto;
+    max-height: 30px;
+    max-width: 72%;
+    object-fit: contain;
+  }
+  .head .sheet {
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .ident {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 22px 18px 6px;
+  }
+  /* number field takes remaining space; version field only as wide as needed */
+  .ident .field    { min-width: 0; flex: 1 1 auto; }
+  .ident .field.ver { text-align: right; flex: 0 0 auto; }
+  .ident .label {
+    font-size: 13px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #5a574e;
+    white-space: nowrap;
+  }
+  .ident .num {
+    display: block;
+    margin-top: 6px;
+    font-size: clamp(18px, 7vw, 40px);
+    letter-spacing: .02em;
+    color: var(--ink);
+    /* keep on one line; shrink to fit the available width instead of wrapping */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ident .verval {
+    display: block;
+    margin-top: 6px;
+    font-size: clamp(18px, 6vw, 34px);
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .stamp {
+    margin: 18px;
+    border: 3px solid currentColor;
+    border-radius: 3px;
+    padding: 16px 14px;
+    text-align: center;
+    transform: rotate(-1.4deg);
+  }
+  .stamp .verdict {
+    font-size: clamp(20px, 6.5vw, 28px);
+    font-weight: 800;
+    letter-spacing: .04em;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+  .stamp .detail {
+    margin-top: 10px;
+    font-size: 12px;
+    letter-spacing: .08em;
+    color: var(--ink);
+    text-transform: uppercase;
+    opacity: .85;
+  }
+  .stamp .detail b { font-weight: 800; opacity: 1; }
+  .is-current   { color: var(--current); }
+  .is-super     { color: var(--super);   }
+  .is-unknown   { color: var(--unknown); }
+  .foot {
+    padding: 12px 18px;
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #8a877d;
+    text-align: center;
+    border-top: 1px solid var(--ink);
+    background: #efece5;
+  }
+  .loading { padding: 40px 18px; text-align: center; color: #5a574e; letter-spacing: .1em; font-size: 13px; text-transform: uppercase; }
+  @media (prefers-reduced-motion: no-preference) {
+    .block { animation: settle .4s ease-out both; }
+    @keyframes settle { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+  <main class="block" id="block" aria-live="polite">
+    <div class="loading">Ανάγνωση τίτλου σχεδίου…</div>
+  </main>
+
+<script>
+(function () {
+  const VERSIONS_BASE = "/versions/";
+
+  const params  = new URLSearchParams(location.search);
+  const number  = (params.get("number") || "").trim();
+  const printed = (params.get("v") || "").trim();
+  const block   = document.getElementById("block");
+
+  const esc = s => String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  function render({ cls, verdict, detail }) {
+    block.innerHTML = `
+      <div class="head">
+        <img class="logo" src="/logo.png" alt="Pavlides Associates S.A.">
+        <span class="sheet">REV CHECK</span>
+      </div>
+      <div class="ident">
+        <div class="field">
+          <span class="label">Σχέδιο</span>
+          <span class="num">${number ? esc(number) : "—"}</span>
+        </div>
+        <div class="field ver">
+          <span class="label">Έκδοση</span>
+          <span class="verval">${printed ? esc(printed) : "—"}</span>
+        </div>
+      </div>
+      <div class="stamp ${cls}">
+        <div class="verdict">${verdict}</div>
+        ${detail ? `<div class="detail">${detail}</div>` : ""}
+      </div>
+      <div class="foot">Σαρώθηκε ${new Date().toLocaleDateString("el-GR")}</div>`;
+    fitNumber();
+  }
+
+  // Shrink the drawing-number font until it fits its column on one line,
+  // so number + version always share a row regardless of screen width.
+  function fitNumber() {
+    const el = block.querySelector(".num");
+    if (!el) return;
+    el.style.fontSize = "";              // reset to the CSS clamp value
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    const min = 11;                      // don't go smaller than legible
+    // scrollWidth > clientWidth means it's overflowing its column
+    let guard = 40;
+    while (el.scrollWidth > el.clientWidth && size > min && guard-- > 0) {
+      size -= 1;
+      el.style.fontSize = size + "px";
+    }
+  }
+
+  if (!number) {
+    render({ cls: "is-unknown", verdict: "Μη έγκυρος κωδικός",
+             detail: "Λείπει ο αριθμός σχεδίου" });
+    return;
+  }
+
+  fetch(VERSIONS_BASE + encodeURIComponent(number) + ".json", { cache: "no-store" })
+    .then(r => {
+      if (r.status === 404) throw { kind: "notfound" };
+      if (!r.ok) throw { kind: "error", status: r.status };
+      return r.json();
+    })
+    .then(data => {
+      const latest = data.version;
+      if (printed && String(printed) === String(latest)) {
+        render({ cls: "is-current", verdict: "Τρέχουσα έκδοση",
+                 detail: "Το σχέδιο είναι ενημερωμένο" });
+      } else if (printed) {
+        render({ cls: "is-super", verdict: "Προηγούμενη έκδοση",
+                 detail: "Τρέχουσα έκδοση: <b>" + esc(latest) + "</b>" });
+      } else {
+        render({ cls: "is-current", verdict: "Τρέχουσα: " + esc(latest),
+                 detail: "" });
+      }
+    })
+    .catch(err => {
+      if (err && err.kind === "notfound") {
+        render({ cls: "is-unknown", verdict: "Δεν βρέθηκε",
+                 detail: "Άγνωστος αριθμός σχεδίου" });
+      } else {
+        render({ cls: "is-unknown", verdict: "Σφάλμα ελέγχου",
+                 detail: "Προσπαθήστε ξανά" });
+      }
+    });
+
+  // re-fit if the viewport changes (e.g. phone rotation)
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(fitNumber, 120); });
+})();
+</script>
+</body>
+</html>
