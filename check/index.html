@@ -158,7 +158,14 @@
 
 <script>
 (function () {
-  const VERSIONS_BASE = "/versions/";
+  // ── Configuration ────────────────────────────────────────────────
+  // The single gist holding all drawing versions, keyed by drawing number:
+  //   { "441 1A2 101": "0", "441 1A2 102": "3", ... }
+  // The gist ID is public and read-only from the browser — safe to embed.
+  const GIST_ID       = "REPLACE_WITH_YOUR_GIST_ID";
+  const MANIFEST_FILE = "versions.json";
+  const GIST_API      = "https://api.github.com/gists/" + GIST_ID;
+  // ─────────────────────────────────────────────────────────────────
 
   const params  = new URLSearchParams(location.search);
   const number  = (params.get("number") || "").trim();
@@ -214,14 +221,24 @@
     return;
   }
 
-  fetch(VERSIONS_BASE + encodeURIComponent(number) + ".json", { cache: "no-store" })
+  // Fetch the whole manifest once from the gist, then look up this drawing.
+  fetch(GIST_API, { cache: "no-store" })
     .then(r => {
-      if (r.status === 404) throw { kind: "notfound" };
       if (!r.ok) throw { kind: "error", status: r.status };
       return r.json();
     })
-    .then(data => {
-      const latest = data.version;
+    .then(gist => {
+      const file = gist.files && gist.files[MANIFEST_FILE];
+      if (!file || typeof file.content !== "string") {
+        throw { kind: "error", status: "manifest-missing" };
+      }
+      const manifest = JSON.parse(file.content);
+
+      if (!Object.prototype.hasOwnProperty.call(manifest, number)) {
+        throw { kind: "notfound" };
+      }
+      const latest = manifest[number];
+
       if (printed && String(printed) === String(latest)) {
         render({ cls: "is-current", verdict: "Τρέχουσα έκδοση",
                  detail: "Το σχέδιο είναι ενημερωμένο" });
